@@ -361,10 +361,8 @@ impl WorkspaceManager {
             }
         };
 
-        let valid_blobs: HashSet<String> = current_files
-            .iter()
-            .map(|f| f.blob_name.clone())
-            .collect();
+        let valid_blobs: HashSet<String> =
+            current_files.iter().map(|f| f.blob_name.clone()).collect();
 
         let mut cache = self.blobs_cache.write().await;
         let deleted = cache.retain_blobs(&valid_blobs);

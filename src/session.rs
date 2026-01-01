@@ -187,8 +187,8 @@ impl AuthSessionStore {
             scopes: DEFAULT_SCOPES.iter().map(|s| s.to_string()).collect(),
         };
 
-        let content = serde_json::to_string_pretty(&session)
-            .context("Failed to serialize session data")?;
+        let content =
+            serde_json::to_string_pretty(&session).context("Failed to serialize session data")?;
 
         std::fs::write(&self.session_path, content)
             .with_context(|| format!("Failed to write session file: {:?}", self.session_path))?;
@@ -206,8 +206,9 @@ impl AuthSessionStore {
     /// Remove the current session
     pub fn remove_session(&self) -> Result<()> {
         if self.session_path.exists() {
-            std::fs::remove_file(&self.session_path)
-                .with_context(|| format!("Failed to remove session file: {:?}", self.session_path))?;
+            std::fs::remove_file(&self.session_path).with_context(|| {
+                format!("Failed to remove session file: {:?}", self.session_path)
+            })?;
         }
 
         info!("Session removed successfully");
@@ -233,7 +234,9 @@ mod tests {
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
-        store.save_session("test_token", "https://test.augmentcode.com").unwrap();
+        store
+            .save_session("test_token", "https://test.augmentcode.com")
+            .unwrap();
 
         let session = store.get_session().unwrap().unwrap();
         assert_eq!(session.access_token, "test_token");
@@ -246,7 +249,9 @@ mod tests {
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
-        store.save_session("test_token", "https://test.augmentcode.com").unwrap();
+        store
+            .save_session("test_token", "https://test.augmentcode.com")
+            .unwrap();
         assert!(store.session_path().exists());
 
         store.remove_session().unwrap();

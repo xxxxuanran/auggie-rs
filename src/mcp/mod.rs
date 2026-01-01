@@ -16,7 +16,7 @@ pub mod types;
 // Re-export run_mcp_server from handlers
 pub use handlers::run_mcp_server;
 
-use crate::api::{ApiClient, ApiCliMode, BatchUploadBlob};
+use crate::api::{ApiCliMode, ApiClient, BatchUploadBlob};
 use crate::session::AuthSessionStore;
 use crate::telemetry::TelemetryReporter;
 use crate::workspace::SharedWorkspaceManager;
@@ -239,7 +239,9 @@ ALWAYS use codebase-retrieval when you're unsure of exact file locations."#
         // Remove deleted files from cache
         if !scan_result.deleted_paths.is_empty() {
             let wm = workspace_manager.read().await;
-            let removed = wm.remove_deleted_from_cache(&scan_result.deleted_paths).await;
+            let removed = wm
+                .remove_deleted_from_cache(&scan_result.deleted_paths)
+                .await;
             if !removed.is_empty() {
                 info!("🗑️ Removed {} deleted files from cache", removed.len());
             }
@@ -312,7 +314,8 @@ ALWAYS use codebase-retrieval when you're unsure of exact file locations."#
 
         // Call API
         let result = api_client
-            .agent_codebase_retrieval(
+            .agents()
+            .codebase_retrieval(
                 &session.tenant_url,
                 &session.access_token,
                 information_request,

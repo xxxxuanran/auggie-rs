@@ -209,12 +209,11 @@ impl OAuthFlow {
     /// Handle the pasted auth JSON from browser
     pub async fn handle_auth_json(&mut self, auth_json: &str) -> Result<String> {
         // Parse the pasted JSON
-        let auth_response: AuthResponse = serde_json::from_str(auth_json)
-            .context("Failed to parse pasted JSON")?;
+        let auth_response: AuthResponse =
+            serde_json::from_str(auth_json).context("Failed to parse pasted JSON")?;
 
         // Get and validate state
-        let oauth_state = self.get_oauth_state()
-            .context("No OAuth state found")?;
+        let oauth_state = self.get_oauth_state().context("No OAuth state found")?;
 
         // Always remove state after reading
         self.remove_oauth_state();
@@ -234,22 +233,22 @@ impl OAuthFlow {
         }
 
         // Validate code
-        let code = auth_response.code
+        let code = auth_response
+            .code
             .as_ref()
             .filter(|c| !c.is_empty())
             .context("No code")?;
 
         // Validate tenant URL
-        let tenant_url = auth_response.tenant_url
+        let tenant_url = auth_response
+            .tenant_url
             .as_ref()
             .filter(|u| !u.is_empty())
             .context("No tenant URL")?;
 
         // Validate tenant URL hostname
-        let parsed_url = Url::parse(tenant_url)
-            .context("Invalid tenant URL")?;
-        let hostname = parsed_url.host_str()
-            .context("No hostname in tenant URL")?;
+        let parsed_url = Url::parse(tenant_url).context("Invalid tenant URL")?;
+        let hostname = parsed_url.host_str().context("No hostname in tenant URL")?;
         let allowed_suffix = get_allowed_hostname_suffix();
         if !hostname.ends_with(&allowed_suffix) {
             anyhow::bail!("OAuth request failed: invalid OAuth tenant URL");
@@ -258,7 +257,8 @@ impl OAuthFlow {
         // Exchange code for token
         info!("Calling get_access_token to retrieve access token");
 
-        match self.api_client
+        match self
+            .api_client
             .get_access_token("", tenant_url, &oauth_state.code_verifier, code)
             .await
         {

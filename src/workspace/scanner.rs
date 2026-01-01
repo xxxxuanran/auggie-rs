@@ -242,8 +242,10 @@ pub fn scan_workspace_incremental(
     let mut unchanged_blobs = Vec::new();
     let mut seen_cache_paths: HashSet<String> = HashSet::new();
 
-    let mut cached_by_base_path: HashMap<String, Vec<(&String, &crate::workspace::cache::FileEntry)>> =
-        HashMap::new();
+    let mut cached_by_base_path: HashMap<
+        String,
+        Vec<(&String, &crate::workspace::cache::FileEntry)>,
+    > = HashMap::new();
     for (cached_path, entry) in &cache.path_to_blob {
         let base = base_path_for_cached_path(cached_path);
         cached_by_base_path

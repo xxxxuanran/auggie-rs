@@ -230,14 +230,22 @@ mod tests {
 
         // Write 1000 lines (should split into 2 chunks: 800 + 200)
         for i in 0..1000 {
-            writeln!(f, "Line {}: This is some content to make the file larger.", i).unwrap();
+            writeln!(
+                f,
+                "Line {}: This is some content to make the file larger.",
+                i
+            )
+            .unwrap();
         }
 
         let manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
         let blobs = manager.scan_and_collect().await.unwrap();
 
         // Should have 2 blobs for the chunked file
-        let large_blobs: Vec<_> = blobs.iter().filter(|b| b.path.starts_with("large.txt")).collect();
+        let large_blobs: Vec<_> = blobs
+            .iter()
+            .filter(|b| b.path.starts_with("large.txt"))
+            .collect();
         assert_eq!(large_blobs.len(), 2, "Expected 2 chunks for 1000-line file");
 
         // Check chunk naming convention
@@ -250,16 +258,24 @@ mod tests {
             assert!(
                 line_count <= MAX_LINES_PER_BLOB,
                 "Chunk {} has {} lines, exceeds MAX_LINES_PER_BLOB ({})",
-                blob.path, line_count, MAX_LINES_PER_BLOB
+                blob.path,
+                line_count,
+                MAX_LINES_PER_BLOB
             );
         }
 
         // First chunk should have exactly MAX_LINES_PER_BLOB lines
-        let chunk1 = large_blobs.iter().find(|b| b.path.ends_with("#chunk1of2")).unwrap();
+        let chunk1 = large_blobs
+            .iter()
+            .find(|b| b.path.ends_with("#chunk1of2"))
+            .unwrap();
         assert_eq!(chunk1.content.lines().count(), MAX_LINES_PER_BLOB);
 
         // Second chunk should have the remaining 200 lines
-        let chunk2 = large_blobs.iter().find(|b| b.path.ends_with("#chunk2of2")).unwrap();
+        let chunk2 = large_blobs
+            .iter()
+            .find(|b| b.path.ends_with("#chunk2of2"))
+            .unwrap();
         assert_eq!(chunk2.content.lines().count(), 200);
     }
 
@@ -276,7 +292,10 @@ mod tests {
         let blobs = manager.scan_and_collect().await.unwrap();
 
         // Should have exactly 1 blob, without chunk suffix
-        let small_blobs: Vec<_> = blobs.iter().filter(|b| b.path.starts_with("small.txt")).collect();
+        let small_blobs: Vec<_> = blobs
+            .iter()
+            .filter(|b| b.path.starts_with("small.txt"))
+            .collect();
         assert_eq!(small_blobs.len(), 1);
         assert_eq!(small_blobs[0].path, "small.txt"); // No #chunk suffix
     }
@@ -301,7 +320,10 @@ mod tests {
         let blobs = manager.scan_and_collect().await.unwrap();
 
         // File size triggers splitting even though line count < MAX_LINES_PER_BLOB
-        let big_blobs: Vec<_> = blobs.iter().filter(|b| b.path.starts_with("biglines.txt")).collect();
+        let big_blobs: Vec<_> = blobs
+            .iter()
+            .filter(|b| b.path.starts_with("biglines.txt"))
+            .collect();
 
         // Should be split (either by size exceeding 128KB or line count)
         assert!(big_blobs.len() >= 1, "Expected at least 1 blob");
@@ -312,7 +334,8 @@ mod tests {
             assert!(
                 blob.content.len() <= MAX_BLOB_SIZE * 2,
                 "Chunk {} size {} is too large",
-                blob.path, blob.content.len()
+                blob.path,
+                blob.content.len()
             );
         }
     }

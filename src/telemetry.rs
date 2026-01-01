@@ -92,12 +92,7 @@ impl TelemetryReporter {
     }
 
     /// Flush all pending events to the server
-    pub async fn flush(
-        &self,
-        api_client: &ApiClient,
-        tenant_url: &str,
-        access_token: &str,
-    ) {
+    pub async fn flush(&self, api_client: &ApiClient, tenant_url: &str, access_token: &str) {
         if !self.enabled {
             return;
         }
@@ -137,9 +132,38 @@ impl Default for TelemetryReporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvVarRestore {
+        prev: Option<String>,
+    }
+
+    impl EnvVarRestore {
+        fn new() -> Self {
+            Self {
+                prev: std::env::var(DISABLE_TELEMETRY_ENV).ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarRestore {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(value) => std::env::set_var(DISABLE_TELEMETRY_ENV, value),
+                None => std::env::remove_var(DISABLE_TELEMETRY_ENV),
+            }
+        }
+    }
 
     #[test]
     fn test_is_telemetry_enabled_default() {
+        let _env_lock_guard = env_lock().lock().unwrap();
+        let _env_restore = EnvVarRestore::new();
         // When env var is not set, telemetry should be enabled
         std::env::remove_var(DISABLE_TELEMETRY_ENV);
         assert!(is_telemetry_enabled());
@@ -147,6 +171,8 @@ mod tests {
 
     #[test]
     fn test_is_telemetry_disabled() {
+        let _env_lock_guard = env_lock().lock().unwrap();
+        let _env_restore = EnvVarRestore::new();
         std::env::set_var(DISABLE_TELEMETRY_ENV, "1");
         assert!(!is_telemetry_enabled());
 
@@ -168,6 +194,8 @@ mod tests {
 
     #[test]
     fn test_is_telemetry_enabled_with_other_values() {
+        let _env_lock_guard = env_lock().lock().unwrap();
+        let _env_restore = EnvVarRestore::new();
         std::env::set_var(DISABLE_TELEMETRY_ENV, "0");
         assert!(is_telemetry_enabled());
 
@@ -183,6 +211,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_telemetry_reporter_disabled() {
+        let _env_lock_guard = env_lock().lock().unwrap();
+        let _env_restore = EnvVarRestore::new();
         // Clean up first to ensure clean state (tests may run in parallel)
         std::env::remove_var(DISABLE_TELEMETRY_ENV);
 
@@ -214,6 +244,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_telemetry_reporter_enabled() {
+        let _env_lock_guard = env_lock().lock().unwrap();
+        let _env_restore = EnvVarRestore::new();
         std::env::remove_var(DISABLE_TELEMETRY_ENV);
         let reporter = TelemetryReporter::new();
         assert!(reporter.is_enabled());
