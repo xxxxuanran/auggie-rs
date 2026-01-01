@@ -222,8 +222,44 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Helper to temporarily clear auth environment variables for testing
+    struct EnvGuard {
+        session_auth: Option<String>,
+        api_token: Option<String>,
+        api_url: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let guard = Self {
+                session_auth: std::env::var("AUGMENT_SESSION_AUTH").ok(),
+                api_token: std::env::var("AUGMENT_API_TOKEN").ok(),
+                api_url: std::env::var("AUGMENT_API_URL").ok(),
+            };
+            std::env::remove_var("AUGMENT_SESSION_AUTH");
+            std::env::remove_var("AUGMENT_API_TOKEN");
+            std::env::remove_var("AUGMENT_API_URL");
+            guard
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(v) = &self.session_auth {
+                std::env::set_var("AUGMENT_SESSION_AUTH", v);
+            }
+            if let Some(v) = &self.api_token {
+                std::env::set_var("AUGMENT_API_TOKEN", v);
+            }
+            if let Some(v) = &self.api_url {
+                std::env::set_var("AUGMENT_API_URL", v);
+            }
+        }
+    }
+
     #[test]
     fn test_session_store_new() {
+        let _guard = EnvGuard::new();
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
         assert!(!store.is_logged_in());
