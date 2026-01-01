@@ -220,7 +220,14 @@ impl AuthSessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
+
+    /// Global lock for environment variable tests to prevent parallel test interference
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     /// Helper to temporarily clear auth environment variables for testing
     struct EnvGuard {
@@ -259,6 +266,7 @@ mod tests {
 
     #[test]
     fn test_session_store_new() {
+        let _lock = env_lock().lock().unwrap();
         let _guard = EnvGuard::new();
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();

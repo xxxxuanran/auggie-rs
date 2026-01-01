@@ -9,7 +9,8 @@ use crate::api::{ApiClient, BatchUploadBlob};
 use crate::session::AuthSessionStore;
 use crate::workspace::{create_shared_workspace_manager, SharedWorkspaceManager, UploadStatus};
 
-use super::{AuggieMcpServer, BATCH_UPLOAD_SIZE};
+use super::server::AuggieMcpServer;
+use super::tools::BATCH_UPLOAD_SIZE;
 
 /// Perform background upload of all files
 pub(super) async fn background_upload(
