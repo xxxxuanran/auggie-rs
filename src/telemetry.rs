@@ -20,8 +20,8 @@ pub fn is_telemetry_enabled() -> bool {
             // Disabled if set to "1", "true", "yes", "on"
             !matches!(val_lower.as_str(), "1" | "true" | "yes" | "on")
         }
-        // Enabled by default if env var is not set
-        Err(_) => true,
+        // Disabled by default if env var is not set
+        Err(_) => false,
     }
 }
 
@@ -161,12 +161,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_telemetry_enabled_default() {
+    fn test_is_telemetry_disabled_default() {
         let _env_lock_guard = env_lock().lock().unwrap();
         let _env_restore = EnvVarRestore::new();
-        // When env var is not set, telemetry should be enabled
+        // When env var is not set, telemetry should be disabled by default
         std::env::remove_var(DISABLE_TELEMETRY_ENV);
-        assert!(is_telemetry_enabled());
+        assert!(!is_telemetry_enabled());
     }
 
     #[test]
@@ -246,7 +246,8 @@ mod tests {
     async fn test_telemetry_reporter_enabled() {
         let _env_lock_guard = env_lock().lock().unwrap();
         let _env_restore = EnvVarRestore::new();
-        std::env::remove_var(DISABLE_TELEMETRY_ENV);
+        // Explicitly enable telemetry by setting env var to "0"
+        std::env::set_var(DISABLE_TELEMETRY_ENV, "0");
         let reporter = TelemetryReporter::new();
         assert!(reporter.is_enabled());
 
