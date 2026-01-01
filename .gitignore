@@ -1,0 +1,9 @@
+.claude/
+target/
+acemcp/
+docs/
+*.md
+*.mjs
+*.mjs*
+*.augmentignore
+!README.md

@@ -1,0 +1,59 @@
+[package]
+name = "auggie"
+version = "0.11.0"
+edition = "2021"
+description = "Auggie CLI with MCP server support"
+license = "MIT"
+
+[[bin]]
+name = "auggie"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"], default-features = false }
+futures-util = "0.3"
+
+# Crypto
+sha2 = "0.10"
+base64 = "0.21"
+rand = "0.8"
+uuid = { version = "1.6", features = ["v4", "v5"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# MCP protocol (using rmcp)
+rmcp = { version = "0.10", features = ["server", "transport-io", "macros"] }
+schemars = { version = "1.0", features = ["chrono04"] }
+
+# Misc
+dirs = "5.0"
+url = "2.5"
+open = "5.0"
+walkdir = "2.4"
+ignore = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[dev-dependencies]
+tempfile = "3.8"
