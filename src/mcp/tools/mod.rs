@@ -3,12 +3,10 @@
 //! Each tool is implemented in its own module for better organization.
 
 mod codebase_retrieval;
+mod common;
 mod echo;
 mod prompt_enhancer;
 mod session;
-
-// Re-export constants
-pub use codebase_retrieval::BATCH_UPLOAD_SIZE;
 
 // Re-export tool functions
 pub use codebase_retrieval::codebase_retrieval;

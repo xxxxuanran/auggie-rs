@@ -12,12 +12,14 @@
 mod cache;
 mod manager;
 mod scanner;
+mod sync;
 mod types;
+mod upload;
 #[cfg(test)]
 mod tests;
 
 // Re-exports
-pub use cache::{BlobsCache, Checkpoint, FileBlob};
+pub use cache::{Checkpoint, FileBlob};
 pub use manager::WorkspaceManager;
-pub use scanner::ScanResult;
+pub use sync::{sync_full, sync_incremental, SyncResult};
 pub use types::{create_shared_workspace_manager, SharedWorkspaceManager, UploadStatus};

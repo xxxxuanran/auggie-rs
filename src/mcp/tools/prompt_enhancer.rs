@@ -4,7 +4,8 @@ use rmcp::{model::*, ErrorData as McpError};
 
 use crate::api::{ApiCliMode, ApiClient};
 use crate::mcp::types::PromptEnhancerArgs;
-use crate::session::AuthSessionStore;
+
+use super::common::{require_session, tool_error};
 
 /// Enhance and improve a user prompt
 pub async fn prompt_enhancer(args: PromptEnhancerArgs) -> Result<CallToolResult, McpError> {
@@ -12,9 +13,7 @@ pub async fn prompt_enhancer(args: PromptEnhancerArgs) -> Result<CallToolResult,
 
     // Check for empty prompt
     if prompt.trim().is_empty() {
-        return Ok(CallToolResult::error(vec![Content::text(
-            "Error: Cannot enhance empty prompt",
-        )]));
+        return Ok(tool_error("Error: Cannot enhance empty prompt"));
     }
 
     // Combine prompt with context if provided
@@ -25,29 +24,9 @@ pub async fn prompt_enhancer(args: PromptEnhancerArgs) -> Result<CallToolResult,
     };
 
     // Get session
-    let session_store = match AuthSessionStore::new(None) {
-        Ok(store) => store,
-        Err(e) => {
-            return Ok(CallToolResult::error(vec![Content::text(format!(
-                "Error accessing session: {}",
-                e
-            ))]));
-        }
-    };
-
-    if !session_store.is_logged_in() {
-        return Ok(CallToolResult::error(vec![Content::text(
-            "Error: Not logged in. Please run 'auggie login' first.",
-        )]));
-    }
-
-    let session = match session_store.get_session() {
-        Ok(Some(s)) => s,
-        _ => {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Error: Could not read session information.",
-            )]));
-        }
+    let session = match require_session() {
+        Ok(s) => s,
+        Err(e) => return Ok(e),
     };
 
     // Call API
