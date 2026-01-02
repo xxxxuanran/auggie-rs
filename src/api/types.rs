@@ -44,7 +44,7 @@ pub struct BatchUploadResponse {
 #[derive(Debug, Serialize)]
 pub(super) struct CodebaseRetrievalRequest {
     pub information_request: String,
-    pub blobs: crate::workspace::Checkpoint,
+    pub blobs: crate::domain::Checkpoint,
     pub dialog: Vec<serde_json::Value>,
     pub max_output_length: i32,
     pub disable_codebase_retrieval: bool,

@@ -26,3 +26,13 @@ pub type SharedWorkspaceManager = Arc<RwLock<WorkspaceManager>>;
 pub fn create_shared_workspace_manager(root_path: PathBuf) -> SharedWorkspaceManager {
     Arc::new(RwLock::new(WorkspaceManager::new(root_path)))
 }
+
+/// Create a shared workspace manager with custom cache directory
+pub fn create_shared_workspace_manager_with_cache(
+    root_path: PathBuf,
+    cache_dir: Option<PathBuf>,
+) -> SharedWorkspaceManager {
+    Arc::new(RwLock::new(WorkspaceManager::with_cache_dir(
+        root_path, cache_dir,
+    )))
+}

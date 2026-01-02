@@ -26,8 +26,11 @@ pub const DEFAULT_CLIENT_ID: &str = "v";
 const STATE_TTL_MINUTES: u64 = 10;
 
 /// Allowed hostname suffix for tenant URLs
-fn get_allowed_hostname_suffix() -> String {
-    std::env::var("TEST_HOSTNAME").unwrap_or_else(|_| ".augmentcode.com".to_string())
+fn get_allowed_hostname_suffix() -> &'static str {
+    // NOTE: TEST_HOSTNAME 环境变量支持已禁用（安全考虑）
+    // 如需在开发环境启用，取消下面注释：
+    // std::env::var("TEST_HOSTNAME").unwrap_or_else(|_| ".augmentcode.com".to_string())
+    ".augmentcode.com"
 }
 
 /// OAuth state stored in oauth-state.json

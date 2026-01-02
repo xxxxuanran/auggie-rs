@@ -34,16 +34,8 @@ pub struct FileBlob {
     pub mtime: u64,
 }
 
-/// Workspace checkpoint containing blob information for API requests
-/// Note: added_blobs is a list of blob_names (SHA256 hashes of path+content)
-/// to match the Augment API format used by acetool
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Checkpoint {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkpoint_id: Option<String>,
-    pub added_blobs: Vec<String>,
-    pub deleted_blobs: Vec<String>,
-}
+// Re-export Checkpoint from domain module
+pub use crate::domain::Checkpoint;
 
 /// Single file entry matching augment.mjs FileInfo structure
 #[derive(Debug, Clone, Serialize, Deserialize)]

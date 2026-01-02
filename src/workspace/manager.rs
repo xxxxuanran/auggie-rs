@@ -18,6 +18,33 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+/// Default Augment rules - hardcoded sensitive file patterns.
+///
+/// These patterns are ALWAYS applied regardless of .gitignore or .augmentignore.
+/// Source: augment.mjs:290832-290847 (LO class, "default Augment rules")
+///
+/// Three-layer ignore strategy (matching augment.mjs):
+/// 1. .gitignore (user-defined)
+/// 2. DEFAULT_AUGMENT_RULES (hardcoded, always applied)
+/// 3. .augmentignore (user-defined)
+pub const DEFAULT_AUGMENT_RULES: &[&str] = &[
+    ".git",
+    "*.pem",
+    "*.key",
+    "*.pfx",
+    "*.p12",
+    "*.jks",
+    "*.keystore",
+    "*.pkcs12",
+    "*.crt",
+    "*.cer",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    ".augment-guidelines",
+];
+
 use super::cache::{compute_path_uuid, BlobsCache, Checkpoint, FileBlob};
 use super::scanner;
 use super::types::UploadStatus;
@@ -42,6 +69,11 @@ pub struct WorkspaceManager {
 impl WorkspaceManager {
     /// Create a new workspace manager
     pub fn new(root_path: PathBuf) -> Self {
+        Self::with_cache_dir(root_path, None)
+    }
+
+    /// Create a new workspace manager with custom cache directory
+    pub fn with_cache_dir(root_path: PathBuf, cache_dir: Option<PathBuf>) -> Self {
         let mut ignore_patterns = HashSet::new();
 
         // Common patterns to ignore (always applied)
@@ -66,13 +98,14 @@ impl WorkspaceManager {
         // Load .gitignore and .augmentignore files
         let gitignore = Self::load_ignore_files(&root_path);
 
-        // Determine cache file path (~/.augment/blobs/<uuid>.json)
+        // Determine cache file path
+        let base_dir = cache_dir.unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".augment")
+        });
         let path_uuid = compute_path_uuid(&root_path);
-        let cache_file_path = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".augment")
-            .join("blobs")
-            .join(format!("{}.json", path_uuid));
+        let cache_file_path = base_dir.join("blobs").join(format!("{}.json", path_uuid));
 
         Self {
             root_path,
@@ -85,12 +118,17 @@ impl WorkspaceManager {
         }
     }
 
-    /// Load .gitignore and .augmentignore files from the workspace root
+    /// Load ignore patterns from multiple sources (matching augment.mjs three-layer strategy).
+    ///
+    /// Order of application:
+    /// 1. .gitignore (user-defined)
+    /// 2. DEFAULT_AUGMENT_RULES (hardcoded sensitive file patterns)
+    /// 3. .augmentignore (user-defined, can override)
     fn load_ignore_files(root_path: &Path) -> Option<Gitignore> {
         let mut builder = GitignoreBuilder::new(root_path);
         let mut has_patterns = false;
 
-        // Load .gitignore if it exists
+        // Layer 1: Load .gitignore if it exists
         let gitignore_path = root_path.join(".gitignore");
         if gitignore_path.exists() {
             if let Some(err) = builder.add(&gitignore_path) {
@@ -101,14 +139,26 @@ impl WorkspaceManager {
             }
         }
 
-        // Load .augmentignore if it exists (same format as .gitignore)
+        // Layer 2: Add DEFAULT_AUGMENT_RULES (hardcoded sensitive file patterns)
+        // Source: augment.mjs:290832-290847 (LO class, "default Augment rules")
+        for pattern in DEFAULT_AUGMENT_RULES {
+            if let Err(err) = builder.add_line(None, pattern) {
+                warn!("Failed to add default Augment rule '{}': {}", pattern, err);
+            }
+        }
+        debug!(
+            "Added {} default Augment rules for sensitive files",
+            DEFAULT_AUGMENT_RULES.len()
+        );
+        has_patterns = true;
+
+        // Layer 3: Load .augmentignore if it exists (can override default rules with !)
         let augmentignore_path = root_path.join(".augmentignore");
         if augmentignore_path.exists() {
             if let Some(err) = builder.add(&augmentignore_path) {
                 warn!("Failed to parse .augmentignore: {}", err);
             } else {
                 info!("Loaded ignore patterns from .augmentignore");
-                has_patterns = true;
             }
         }
 

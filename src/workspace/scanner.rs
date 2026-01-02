@@ -2,21 +2,30 @@
 //!
 //! This module provides file system scanning utilities for collecting
 //! files that need to be uploaded to the Augment backend.
+//!
+//! Uses `ignore::WalkBuilder` for recursive .gitignore support,
+//! matching augment.mjs's ignoreTree behavior (see augment.mjs:293290).
 
 use crate::workspace::cache::{compute_blob_name, BlobsCache, FileBlob};
+use crate::workspace::manager::DEFAULT_AUGMENT_RULES;
 use ignore::gitignore::Gitignore;
+use ignore::overrides::OverrideBuilder;
+use ignore::WalkBuilder;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 use tracing::{debug, warn};
-use walkdir::WalkDir;
 
 /// Maximum blob size in bytes.
 pub const MAX_BLOB_SIZE: usize = 128 * 1024;
 
 /// Maximum lines per blob when splitting large files.
 pub const MAX_LINES_PER_BLOB: usize = 800;
+
+/// Maximum file size to read (1MB).
+/// Files larger than this are skipped to avoid memory issues.
+pub const MAX_READABLE_FILE_SIZE: u64 = 1024 * 1024;
 
 /// Legacy alias (bytes).
 #[allow(dead_code)]
@@ -98,25 +107,67 @@ pub fn should_ignore(
     }
 }
 
+/// Build a WalkBuilder with all ignore rules configured.
+///
+/// This matches augment.mjs's three-layer ignore strategy:
+/// 1. .gitignore (recursively in all directories)
+/// 2. DEFAULT_AUGMENT_RULES (hardcoded sensitive file patterns)
+/// 3. .augmentignore (at root, can override with !)
+fn build_walker(root_path: &Path, ignore_patterns: &HashSet<String>) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(root_path);
+
+    // Enable standard gitignore processing (recursive)
+    builder.standard_filters(true);
+    builder.git_ignore(true);
+    builder.git_global(true);
+    builder.git_exclude(true);
+
+    // Don't follow symlinks
+    builder.follow_links(false);
+
+    // Add .augmentignore support
+    builder.add_custom_ignore_filename(".augmentignore");
+
+    // Add DEFAULT_AUGMENT_RULES as global overrides
+    // These patterns are ALWAYS applied (like augment.mjs LO class)
+    let mut override_builder = OverrideBuilder::new(root_path);
+    for pattern in DEFAULT_AUGMENT_RULES {
+        // Convert to override format (! prefix means ignore)
+        let ignore_pattern = format!("!{}", pattern);
+        if let Err(e) = override_builder.add(&ignore_pattern) {
+            warn!("Failed to add default Augment rule '{}': {}", pattern, e);
+        }
+    }
+    if let Ok(overrides) = override_builder.build() {
+        builder.overrides(overrides);
+    }
+
+    // Add directory patterns from ignore_patterns (legacy support)
+    for pattern in ignore_patterns {
+        // These are simple directory names like "node_modules", "target", etc.
+        builder.add_ignore(root_path.join(pattern));
+    }
+
+    builder
+}
+
 /// Scan a workspace directory and collect file information.
 ///
 /// Returns a list of FileBlobs with path, content, and blob_name.
-/// This function walks the directory tree, respects ignore patterns,
-/// and converts files to blobs for upload.
+/// This function walks the directory tree with recursive .gitignore support,
+/// matching augment.mjs's ignoreTree behavior.
 pub fn scan_workspace(
     root_path: &Path,
     ignore_patterns: &HashSet<String>,
-    gitignore: Option<&Gitignore>,
+    _gitignore: Option<&Gitignore>, // Legacy parameter, kept for API compatibility
 ) -> Vec<FileBlob> {
     let mut blobs = Vec::new();
 
     debug!("Scanning workspace: {}", root_path.display());
 
-    for entry in WalkDir::new(root_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|e| !should_ignore(e.path(), ignore_patterns, gitignore))
-    {
+    let walker = build_walker(root_path, ignore_patterns);
+
+    for entry in walker.build() {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
@@ -152,6 +203,16 @@ fn process_file(path: &Path, root_path: &Path) -> Vec<FileBlob> {
             return Vec::new();
         }
     };
+
+    // Skip files that are too large to avoid memory issues
+    if metadata.len() > MAX_READABLE_FILE_SIZE {
+        debug!(
+            "Skipping large file ({} bytes): {}",
+            metadata.len(),
+            path.display()
+        );
+        return Vec::new();
+    }
 
     // Get mtime from metadata
     let mtime = metadata
@@ -232,11 +293,12 @@ pub struct ScanResult {
 /// - Only reads file content when mtime changed
 /// - Detects deleted files by comparing with cache
 /// - Returns unchanged blob_names from cache
+/// - Uses recursive .gitignore support (matching augment.mjs ignoreTree)
 pub fn scan_workspace_incremental(
     root_path: &Path,
     cache: &BlobsCache,
     ignore_patterns: &HashSet<String>,
-    gitignore: Option<&Gitignore>,
+    _gitignore: Option<&Gitignore>, // Legacy parameter, kept for API compatibility
 ) -> ScanResult {
     let mut to_upload = Vec::new();
     let mut unchanged_blobs = Vec::new();
@@ -256,11 +318,9 @@ pub fn scan_workspace_incremental(
 
     debug!("Incremental scanning workspace: {}", root_path.display());
 
-    for entry in WalkDir::new(root_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|e| !should_ignore(e.path(), ignore_patterns, gitignore))
-    {
+    let walker = build_walker(root_path, ignore_patterns);
+
+    for entry in walker.build() {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
