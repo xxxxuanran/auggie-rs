@@ -131,7 +131,7 @@ impl AuggieMcpServer {
         &self,
         Parameters(args): Parameters<PromptEnhancerArgs>,
     ) -> Result<CallToolResult, McpError> {
-        tools::prompt_enhancer(args).await
+        tools::prompt_enhancer(&self.workspace_manager, args).await
     }
 }
 

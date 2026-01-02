@@ -57,6 +57,63 @@ pub struct CodebaseRetrievalResponse {
     pub formatted_retrieval: String,
 }
 
+// ============================================================================
+// Chat Stream Types (for legacy prompt enhancer path)
+// ============================================================================
+
+/// Blobs structure for chat-stream requests
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ChatStreamBlobs {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_id: Option<String>,
+    pub added_blobs: Vec<String>,
+    pub deleted_blobs: Vec<String>,
+}
+
+impl From<crate::domain::Checkpoint> for ChatStreamBlobs {
+    fn from(cp: crate::domain::Checkpoint) -> Self {
+        Self {
+            checkpoint_id: cp.checkpoint_id,
+            added_blobs: cp.added_blobs,
+            deleted_blobs: cp.deleted_blobs,
+        }
+    }
+}
+
+/// Chat stream request body (for legacy prompt enhancer via chat-stream endpoint)
+///
+/// This matches the request structure used by augment.mjs for silent chat requests.
+/// See ENHANCER_AUGMENT.md section 3.4 for full field documentation.
+#[derive(Debug, Serialize)]
+pub(super) struct ChatStreamRequest {
+    /// The message to send (LUr-wrapped prompt for enhancement)
+    pub message: String,
+    /// Chat history for context
+    pub chat_history: Vec<ChatHistoryExchange>,
+    /// Blob/checkpoint data for codebase context
+    pub blobs: ChatStreamBlobs,
+    /// Silent mode - don't show in UI
+    pub silent: bool,
+    /// Chat mode
+    pub mode: String,
+    /// Tool definitions (empty for prompt enhancement)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tool_definitions: Vec<serde_json::Value>,
+    /// Nodes (empty for legacy path)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub nodes: Vec<serde_json::Value>,
+    /// Model ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Conversation ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+}
+
+// ============================================================================
+// Prompt Enhancer Types (new endpoint)
+// ============================================================================
+
 /// Prompt enhancer text node
 #[derive(Debug, Serialize)]
 pub(super) struct PromptEnhancerTextNode {
