@@ -1,13 +1,13 @@
 //! Prompt enhancer tool implementation.
 
 use rmcp::{model::*, ErrorData as McpError};
-use tracing::debug;
+use tracing::{debug, info};
 
-use crate::api::{ApiCliMode, ApiClient};
 use crate::mcp::types::PromptEnhancerArgs;
+use crate::runtime::get_client;
 use crate::workspace::SharedWorkspaceManager;
 
-use super::common::{require_session, tool_error};
+use super::common::tool_error;
 
 /// Enhance and improve a user prompt.
 ///
@@ -19,9 +19,15 @@ use super::common::{require_session, tool_error};
 ///
 /// Note: This tool does not trigger workspace synchronization. It uses whatever
 /// checkpoint data is already available from previous syncs.
+///
+/// # Arguments
+/// * `workspace_manager` - Optional shared workspace manager for codebase context
+/// * `args` - Tool arguments (prompt, optional context)
+/// * `model` - Optional model ID to use (from CLI -m/--model flag)
 pub async fn prompt_enhancer(
     workspace_manager: &Option<SharedWorkspaceManager>,
     args: PromptEnhancerArgs,
+    model: Option<String>,
 ) -> Result<CallToolResult, McpError> {
     let prompt = args.prompt;
 
@@ -37,13 +43,20 @@ pub async fn prompt_enhancer(
         prompt
     };
 
-    // Get session
-    let session = match require_session() {
-        Ok(s) => s,
-        Err(e) => return Ok(e),
+    // Get authenticated client from runtime
+    let client = match get_client() {
+        Some(c) => c,
+        None => {
+            return Ok(tool_error(
+                "Error: Not authenticated. Please run 'auggie login' first.",
+            ));
+        }
     };
 
-    let api_client = ApiClient::with_mode(ApiCliMode::Mcp);
+    // Log model if specified
+    if let Some(ref m) = model {
+        info!("Using model for prompt enhancement: {}", m);
+    }
 
     // Get existing checkpoint from workspace (no sync triggered)
     let checkpoint = match workspace_manager {
@@ -62,17 +75,9 @@ pub async fn prompt_enhancer(
         }
     };
 
-    // Call API with existing checkpoint
-    match api_client
-        .prompt_enhancer(
-            &session.tenant_url,
-            &session.access_token,
-            full_prompt,
-            None, // chat_history
-            None, // conversation_id
-            None, // model
-            checkpoint,
-        )
+    // Call API with existing checkpoint and model
+    match client
+        .prompt_enhancer(full_prompt, None, None, model, checkpoint)
         .await
     {
         Ok(result) => Ok(CallToolResult::success(vec![Content::text(

@@ -5,23 +5,26 @@
 use anyhow::{Context, Result};
 use tracing::{error, info, warn};
 
-use crate::api::ApiClient;
-use crate::session::AuthSessionStore;
+use crate::api::{ApiCliMode, AuthenticatedClient};
+use crate::runtime::{get_client, set_runtime};
+use crate::startup::StartupContext;
 use crate::workspace::{create_shared_workspace_manager, sync_full, SharedWorkspaceManager};
 
 use super::server::AuggieMcpServer;
 
-/// Perform background upload of all files
-pub(super) async fn background_upload(
-    workspace_manager: SharedWorkspaceManager,
-    tenant_url: String,
-    access_token: String,
-) {
-    let api_client = ApiClient::new(None);
+/// Perform background upload of all files using the global authenticated client.
+pub(super) async fn background_upload(workspace_manager: SharedWorkspaceManager) {
+    let client = match get_client() {
+        Some(c) => c,
+        None => {
+            warn!("Cannot perform background upload: no authenticated client");
+            return;
+        }
+    };
 
     let sync_result = {
         let wm = workspace_manager.read().await;
-        sync_full(&wm, &api_client, &tenant_url, &access_token).await
+        sync_full(&wm, client).await
     };
 
     info!(
@@ -47,9 +50,11 @@ fn detect_git_root() -> Result<std::path::PathBuf> {
 }
 
 /// Run the MCP server over stdio
-pub async fn run_mcp_server(workspace_root: Option<String>, _model: Option<String>) -> Result<()> {
-    use rmcp::{transport::stdio, ServiceExt};
-
+///
+/// # Arguments
+/// * `workspace_root` - Optional workspace root path (auto-detects git root if absent)
+/// * `model` - Optional model ID to use for prompt enhancement (from CLI -m/--model)
+pub async fn run_mcp_server(workspace_root: Option<String>, model: Option<String>) -> Result<()> {
     info!("🔧 Starting Auggie MCP Tool Server...");
     info!("📝 Stdio mode (using rmcp)");
 
@@ -76,28 +81,70 @@ pub async fn run_mcp_server(workspace_root: Option<String>, _model: Option<Strin
 
     info!("✅ Workspace manager initialized");
 
-    // Try to start background upload if logged in
-    let session_store = AuthSessionStore::new(None).ok();
-    if let Some(store) = session_store {
-        if store.is_logged_in() {
-            if let Ok(Some(session)) = store.get_session() {
-                info!("🔄 Starting workspace indexing in background...");
-                let wm = workspace_manager.clone();
-                let tenant_url = session.tenant_url.clone();
-                let access_token = session.access_token.clone();
+    // Run startup ensure flow (auth, api, feature flags)
+    let mut startup_ctx = match StartupContext::new(ApiCliMode::Mcp, None) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            warn!("Failed to create startup context: {}", e);
+            // Continue without startup validation - tools will fail if not logged in
+            let server = AuggieMcpServer::new(Some(workspace_manager), None);
+            return run_server(server).await;
+        }
+    };
 
-                // Spawn background upload task
-                tokio::spawn(async move {
-                    background_upload(wm, tenant_url, access_token).await;
-                });
+    let resolved_model: Option<String>;
+
+    match startup_ctx.ensure_all().await {
+        Ok(state) => {
+            // Resolve user-provided model using the loaded model_info_registry
+            resolved_model = state.resolve_model(model.as_deref());
+
+            if let Some(ref m) = resolved_model {
+                info!("🎯 Using model: {}", m);
             }
-        } else {
-            info!("⚠️ Not logged in - background indexing skipped (will index on first search)");
+
+            // Create authenticated client with stored credentials
+            // This enables HTTP/2 connection reuse for all API calls
+            let client = AuthenticatedClient::new(
+                ApiCliMode::Mcp,
+                state.tenant_url().to_string(),
+                state.access_token().to_string(),
+            );
+
+            // Store runtime in global singleton (like augment.mjs's fdt())
+            set_runtime(state, client);
+
+            // Start background upload using the global client
+            info!("🔄 Starting workspace indexing in background...");
+            let wm = workspace_manager.clone();
+
+            tokio::spawn(async move {
+                background_upload(wm).await;
+            });
+        }
+        Err(e) => {
+            warn!("Startup validation failed: {}", e);
+            info!("⚠️ Continuing without full validation - some tools may not work");
+
+            if model.is_some() {
+                warn!(
+                    "Cannot validate --model={} without successful startup",
+                    model.as_deref().unwrap_or("")
+                );
+            }
+            resolved_model = None;
         }
     }
 
-    // Create server with workspace manager
-    let server = AuggieMcpServer::new(Some(workspace_manager));
+    // Create server with workspace manager and resolved model
+    let server = AuggieMcpServer::new(Some(workspace_manager), resolved_model);
+
+    run_server(server).await
+}
+
+/// Run the MCP server with the given server instance.
+async fn run_server(server: AuggieMcpServer) -> Result<()> {
+    use rmcp::{transport::stdio, ServiceExt};
 
     info!("✅ MCP tool server started");
     info!("🔗 Ready for MCP client connections");

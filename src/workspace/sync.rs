@@ -7,7 +7,7 @@
 
 use tracing::{debug, info, warn};
 
-use crate::api::ApiClient;
+use crate::api::AuthenticatedClient;
 
 use super::cache::Checkpoint;
 use super::manager::WorkspaceManager;
@@ -60,9 +60,7 @@ impl SyncProgressCallback for UploadStatusProgress<'_> {
 /// 4. Returns checkpoint with all known blob names
 pub async fn sync_incremental(
     manager: &WorkspaceManager,
-    api_client: &ApiClient,
-    tenant_url: &str,
-    access_token: &str,
+    client: &AuthenticatedClient,
 ) -> SyncResult {
     // Perform incremental scan
     info!("🔄 Performing incremental scan...");
@@ -102,8 +100,7 @@ pub async fn sync_incremental(
         debug!("Split into {} batches", batches.len());
 
         for batch in batches {
-            let result =
-                upload_batch_with_fallback(api_client, tenant_url, access_token, &batch).await;
+            let result = upload_batch_with_fallback(client, &batch).await;
 
             // Mark uploaded files in cache
             if !result.uploaded_files.is_empty() {
@@ -143,12 +140,7 @@ pub async fn sync_incremental(
 /// 1. Scans all files (not just changed ones)
 /// 2. Updates UploadStatus during progress
 /// 3. Returns total counts
-pub async fn sync_full(
-    manager: &WorkspaceManager,
-    api_client: &ApiClient,
-    tenant_url: &str,
-    access_token: &str,
-) -> SyncResult {
+pub async fn sync_full(manager: &WorkspaceManager, client: &AuthenticatedClient) -> SyncResult {
     info!("🔄 Starting full workspace sync...");
 
     // Scan workspace
@@ -199,8 +191,7 @@ pub async fn sync_full(
     debug!("Split into {} batches", batches.len());
 
     for batch in batches {
-        let result =
-            upload_batch_with_fallback(api_client, tenant_url, access_token, &batch).await;
+        let result = upload_batch_with_fallback(client, &batch).await;
 
         // Mark uploaded files in cache
         if !result.uploaded_files.is_empty() {

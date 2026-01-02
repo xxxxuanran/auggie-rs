@@ -4,6 +4,7 @@
 //! Augment backend services, equivalent to the Eye class in augment.mjs.
 
 mod agents;
+mod authenticated;
 mod batch_upload;
 mod client;
 mod get_models;
@@ -15,6 +16,7 @@ mod types;
 
 #[allow(unused_imports)]
 pub use agents::AgentsApi;
+pub use authenticated::AuthenticatedClient;
 pub use client::{ApiClient, CliMode};
 
 pub use self::CliMode as ApiCliMode;

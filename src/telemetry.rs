@@ -3,7 +3,7 @@
 //! This module provides functionality for collecting tool use events
 //! and periodically uploading them to the Augment backend.
 
-use crate::api::{ApiClient, ToolUseEvent};
+use crate::api::{AuthenticatedClient, ToolUseEvent};
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -92,7 +92,7 @@ impl TelemetryReporter {
     }
 
     /// Flush all pending events to the server
-    pub async fn flush(&self, api_client: &ApiClient, tenant_url: &str, access_token: &str) {
+    pub async fn flush(&self, client: &AuthenticatedClient) {
         if !self.enabled {
             return;
         }
@@ -108,10 +108,7 @@ impl TelemetryReporter {
 
         debug!("Flushing {} telemetry events", events.len());
 
-        if let Err(e) = api_client
-            .record_request_events(tenant_url, access_token, events)
-            .await
-        {
+        if let Err(e) = client.record_request_events(events).await {
             warn!("Failed to send telemetry events: {}", e);
             // Don't re-queue events on failure to avoid unbounded growth
         }

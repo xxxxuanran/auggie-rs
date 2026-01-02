@@ -8,6 +8,7 @@ mod domain;
 mod mcp;
 mod metadata;
 mod oauth;
+mod runtime;
 mod session;
 mod startup;
 mod telemetry;

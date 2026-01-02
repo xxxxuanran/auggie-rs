@@ -3,11 +3,11 @@
 use rmcp::{model::*, ErrorData as McpError};
 use tracing::info;
 
-use crate::api::{ApiCliMode, ApiClient};
 use crate::mcp::types::CodebaseRetrievalArgs;
+use crate::runtime::get_client;
 use crate::workspace::{sync_incremental, SharedWorkspaceManager};
 
-use super::common::{require_session, tool_error};
+use super::common::tool_error;
 
 /// Execute codebase retrieval
 pub async fn codebase_retrieval(
@@ -24,17 +24,20 @@ pub async fn codebase_retrieval(
         }
     };
 
-    // Get session
-    let session = match require_session() {
-        Ok(s) => s,
-        Err(e) => return Ok(e),
+    // Get authenticated client from runtime
+    let client = match get_client() {
+        Some(c) => c,
+        None => {
+            return Ok(tool_error(
+                "Error: Not authenticated. Please run 'auggie login' first.",
+            ));
+        }
     };
 
     // Sync workspace (scan + upload)
-    let api_client = ApiClient::with_mode(ApiCliMode::Mcp);
     let sync_result = {
         let wm = workspace_manager.read().await;
-        sync_incremental(&wm, &api_client, &session.tenant_url, &session.access_token).await
+        sync_incremental(&wm, client).await
     };
 
     info!(
@@ -43,14 +46,8 @@ pub async fn codebase_retrieval(
     );
 
     // Call API
-    let result = api_client
-        .agents()
-        .codebase_retrieval(
-            &session.tenant_url,
-            &session.access_token,
-            args.information_request,
-            sync_result.checkpoint,
-        )
+    let result = client
+        .codebase_retrieval(&args.information_request, sync_result.checkpoint)
         .await;
 
     match result {

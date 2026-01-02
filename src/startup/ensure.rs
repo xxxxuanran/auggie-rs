@@ -21,6 +21,10 @@ use anyhow::{Context, Result};
 use tracing::{debug, error, info, warn};
 
 use crate::api::{ApiClient, ApiCliMode, ApiStatus, GetModelsResponse, ValidationResult};
+
+use super::model_resolver::{
+    parse_model_info_registry, resolve_model_with_fallback, ModelInfoRegistry,
+};
 use crate::metadata::MetadataManager;
 use crate::session::{AuthSessionStore, SessionData};
 
@@ -118,9 +122,32 @@ pub struct StartupState {
     pub session: SessionData,
     /// Model configuration from get-models
     pub model_config: GetModelsResponse,
+    /// Parsed model info registry (from feature_flags.model_info_registry)
+    model_info_registry: Option<ModelInfoRegistry>,
 }
 
 impl StartupState {
+    /// Create a new StartupState with parsed model_info_registry
+    pub fn new(session: SessionData, model_config: GetModelsResponse) -> Self {
+        // Parse model_info_registry from feature_flags
+        let model_info_registry = model_config
+            .feature_flags
+            .other
+            .get("model_info_registry")
+            .and_then(|v| v.as_str())
+            .and_then(parse_model_info_registry);
+
+        if let Some(ref registry) = model_info_registry {
+            debug!("Loaded {} models from model_info_registry", registry.len());
+        }
+
+        Self {
+            session,
+            model_config,
+            model_info_registry,
+        }
+    }
+
     /// Get the tenant URL
     pub fn tenant_url(&self) -> &str {
         &self.session.tenant_url
@@ -136,7 +163,7 @@ impl StartupState {
         self.model_config.is_feature_enabled(flag)
     }
 
-    /// Get the default model
+    /// Get the default model ID
     pub fn default_model(&self) -> Option<&str> {
         self.model_config.get_default_model()
     }
@@ -152,6 +179,39 @@ impl StartupState {
     /// Get user tier if available
     pub fn user_tier(&self) -> Option<&str> {
         self.model_config.user_tier.as_deref()
+    }
+
+    /// Get the model info registry
+    pub fn model_info_registry(&self) -> Option<&ModelInfoRegistry> {
+        self.model_info_registry.as_ref()
+    }
+
+    /// Resolve a user-provided model string to a model ID.
+    ///
+    /// Matching priority (same as augment.mjs):
+    /// 1. Match by shortName (e.g., "sonnet4.5" -> "claude-sonnet-4-5")
+    /// 2. Match by full id (e.g., "claude-sonnet-4-5")
+    /// 3. Fall back to default if not found or invalid
+    ///
+    /// Returns None if no user input and should use API default.
+    pub fn resolve_model(&self, user_input: Option<&str>) -> Option<String> {
+        match &self.model_info_registry {
+            Some(registry) => {
+                resolve_model_with_fallback(user_input, registry, self.default_model())
+            }
+            None => {
+                // No registry available
+                if let Some(input) = user_input {
+                    if !input.trim().is_empty() {
+                        warn!(
+                            "model_info_registry not available, ignoring --model={}",
+                            input
+                        );
+                    }
+                }
+                None
+            }
+        }
     }
 }
 
@@ -429,10 +489,7 @@ impl StartupContext {
             // Non-fatal, continue startup
         }
 
-        Ok(StartupState {
-            session,
-            model_config,
-        })
+        Ok(StartupState::new(session, model_config))
     }
 
     /// Get current auth status

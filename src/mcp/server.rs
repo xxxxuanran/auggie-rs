@@ -8,8 +8,7 @@ use rmcp::{
 };
 use std::time::Instant;
 
-use crate::api::{ApiCliMode, ApiClient};
-use crate::session::AuthSessionStore;
+use crate::runtime::get_client;
 use crate::telemetry::TelemetryReporter;
 use crate::workspace::SharedWorkspaceManager;
 
@@ -22,17 +21,29 @@ pub struct AuggieMcpServer {
     workspace_manager: Option<SharedWorkspaceManager>,
     tool_router: ToolRouter<Self>,
     telemetry: TelemetryReporter,
+    /// Model ID to use for prompt enhancement (from CLI -m/--model flag)
+    model: Option<String>,
 }
 
 #[tool_router]
 impl AuggieMcpServer {
     /// Create a new Auggie MCP server
-    pub fn new(workspace_manager: Option<SharedWorkspaceManager>) -> Self {
+    ///
+    /// # Arguments
+    /// * `workspace_manager` - Optional shared workspace manager for codebase indexing
+    /// * `model` - Optional model ID to use for prompt enhancement (from CLI -m/--model)
+    pub fn new(workspace_manager: Option<SharedWorkspaceManager>, model: Option<String>) -> Self {
         Self {
             workspace_manager,
             tool_router: Self::tool_router(),
             telemetry: TelemetryReporter::new(),
+            model,
         }
+    }
+
+    /// Get the configured model ID
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
     }
 
     /// Echo back the input message
@@ -92,13 +103,6 @@ impl AuggieMcpServer {
             Err(_) => (true, None),
         };
 
-        // Get session for telemetry flush
-        let (tenant_url, access_token) = AuthSessionStore::new(None)
-            .ok()
-            .and_then(|s| s.get_session().ok().flatten())
-            .map(|s| (s.tenant_url, s.access_token))
-            .unzip();
-
         self.telemetry
             .record_tool_use(
                 request_id,
@@ -113,10 +117,9 @@ impl AuggieMcpServer {
             )
             .await;
 
-        // Flush telemetry if we have credentials
-        if let (Some(url), Some(token)) = (tenant_url, access_token) {
-            let api_client = ApiClient::with_mode(ApiCliMode::Mcp);
-            self.telemetry.flush(&api_client, &url, &token).await;
+        // Flush telemetry if we have an authenticated client
+        if let Some(client) = get_client() {
+            self.telemetry.flush(client).await;
         }
 
         result
@@ -131,7 +134,7 @@ impl AuggieMcpServer {
         &self,
         Parameters(args): Parameters<PromptEnhancerArgs>,
     ) -> Result<CallToolResult, McpError> {
-        tools::prompt_enhancer(&self.workspace_manager, args).await
+        tools::prompt_enhancer(&self.workspace_manager, args, self.model.clone()).await
     }
 }
 
@@ -162,7 +165,15 @@ mod tests {
 
     #[test]
     fn test_mcp_server_creation() {
-        let server = AuggieMcpServer::new(None);
+        let server = AuggieMcpServer::new(None, None);
         assert!(server.workspace_manager.is_none());
+        assert!(server.model.is_none());
+    }
+
+    #[test]
+    fn test_mcp_server_with_model() {
+        let server = AuggieMcpServer::new(None, Some("claude-sonnet-4-5".to_string()));
+        assert!(server.workspace_manager.is_none());
+        assert_eq!(server.model(), Some("claude-sonnet-4-5"));
     }
 }

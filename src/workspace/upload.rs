@@ -7,7 +7,7 @@
 
 use tracing::{debug, warn};
 
-use crate::api::{ApiClient, BatchUploadBlob, BatchUploadResponse};
+use crate::api::{AuthenticatedClient, BatchUploadBlob, BatchUploadResponse};
 
 use super::FileBlob;
 
@@ -63,9 +63,7 @@ pub struct BatchUploadResult {
 /// Upload a batch of files with fallback to sequential uploads.
 /// Matches augment.mjs _uploadBlobBatch + _uploadBlobsSequentially logic.
 pub async fn upload_batch_with_fallback(
-    api_client: &ApiClient,
-    tenant_url: &str,
-    access_token: &str,
+    client: &AuthenticatedClient,
     batch: &[FileBlob],
 ) -> BatchUploadResult {
     let mut result = BatchUploadResult {
@@ -89,9 +87,7 @@ pub async fn upload_batch_with_fallback(
         .collect();
 
     // Try batch upload first
-    let batch_result: Result<BatchUploadResponse, _> = api_client
-        .batch_upload(tenant_url, access_token, blobs)
-        .await;
+    let batch_result: Result<BatchUploadResponse, _> = client.batch_upload(blobs).await;
 
     let successfully_uploaded = match &batch_result {
         Ok(response) => {
@@ -120,10 +116,7 @@ pub async fn upload_batch_with_fallback(
             content: file.content.clone(),
         }];
 
-        match api_client
-            .batch_upload(tenant_url, access_token, single_blob)
-            .await
-        {
+        match client.batch_upload(single_blob).await {
             Ok(response) => {
                 if !response.blob_names.is_empty() {
                     result.blob_names.extend(response.blob_names);
