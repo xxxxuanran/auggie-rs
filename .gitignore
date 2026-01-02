@@ -8,3 +8,4 @@ docs/
 *.json
 *.augmentignore
 !README.md
+!AGENTS.md

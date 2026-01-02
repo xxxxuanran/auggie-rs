@@ -275,6 +275,8 @@ mod tests {
 
     #[test]
     fn test_session_save_and_load() {
+        let _lock = env_lock().lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
@@ -290,6 +292,8 @@ mod tests {
 
     #[test]
     fn test_session_remove() {
+        let _lock = env_lock().lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempdir().unwrap();
         let store = AuthSessionStore::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
