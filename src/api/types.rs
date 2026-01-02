@@ -418,7 +418,11 @@ impl ApiError {
             }
             _ => {
                 if body.is_empty() {
-                    format!("API error (HTTP {}): {}", http_status, status.error_message())
+                    format!(
+                        "API error (HTTP {}): {}",
+                        http_status,
+                        status.error_message()
+                    )
                 } else {
                     format!("API error (HTTP {}): {}", http_status, body)
                 }
@@ -449,9 +453,7 @@ impl ApiError {
                 "Your account does not have access to this feature. \
                  Contact your administrator or sign up at augment.new"
             }
-            ApiStatus::AugmentUpgradeRequired => {
-                "Please update auggie to the latest version."
-            }
+            ApiStatus::AugmentUpgradeRequired => "Please update auggie to the latest version.",
             ApiStatus::ResourceExhausted => {
                 "You have exceeded the rate limit. Please wait a moment and try again."
             }
@@ -582,19 +584,16 @@ impl GetModelsResponse {
             "enable_commit_retrieval" => {
                 self.feature_flags.enable_commit_retrieval.unwrap_or(false)
             }
-            "enable_prompt_enhancer" => {
-                self.feature_flags.enable_prompt_enhancer.unwrap_or(true)
-            }
+            "enable_prompt_enhancer" => self.feature_flags.enable_prompt_enhancer.unwrap_or(true),
             "enable_telemetry" => self.feature_flags.enable_telemetry.unwrap_or(false),
             "enable_mcp_mode" => self.feature_flags.enable_mcp_mode.unwrap_or(true),
             "enable_cli_mode" => self.feature_flags.enable_cli_mode.unwrap_or(true),
-            other => {
-                self.feature_flags
-                    .other
-                    .get(other)
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            }
+            other => self
+                .feature_flags
+                .other
+                .get(other)
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
         }
     }
 

@@ -121,9 +121,7 @@ impl MetadataManager {
     /// Get the current session count
     #[allow(dead_code)]
     pub fn session_count(&self) -> u64 {
-        self.read_metadata()
-            .map(|m| m.session_count)
-            .unwrap_or(0)
+        self.read_metadata().map(|m| m.session_count).unwrap_or(0)
     }
 }
 
@@ -135,16 +133,14 @@ mod tests {
     #[test]
     fn test_metadata_manager_new() {
         let tmp = tempdir().unwrap();
-        let manager =
-            MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
+        let manager = MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
         assert!(manager.metadata_path.exists() == false); // File not created until write
     }
 
     #[test]
     fn test_update_session() {
         let tmp = tempdir().unwrap();
-        let manager =
-            MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
+        let manager = MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
         // First update
         manager.update_session().unwrap();
@@ -163,8 +159,7 @@ mod tests {
     #[test]
     fn test_read_nonexistent_metadata() {
         let tmp = tempdir().unwrap();
-        let manager =
-            MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
+        let manager = MetadataManager::new(Some(tmp.path().to_string_lossy().to_string())).unwrap();
 
         let metadata = manager.read_metadata().unwrap();
         assert_eq!(metadata.session_count, 0);

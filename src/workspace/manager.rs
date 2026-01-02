@@ -18,6 +18,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use crate::runtime::get_client;
+
+use super::cache::{compute_path_uuid, BlobsCache, Checkpoint, FileBlob};
+use super::scanner;
+use super::sync::sync_full;
+use super::types::UploadStatus;
+
 /// Default Augment rules - hardcoded sensitive file patterns.
 ///
 /// These patterns are ALWAYS applied regardless of .gitignore or .augmentignore.
@@ -45,10 +52,6 @@ pub const DEFAULT_AUGMENT_RULES: &[&str] = &[
     ".augment-guidelines",
 ];
 
-use super::cache::{compute_path_uuid, BlobsCache, Checkpoint, FileBlob};
-use super::scanner;
-use super::types::UploadStatus;
-
 /// Workspace manager for tracking file changes and uploads
 pub struct WorkspaceManager {
     root_path: PathBuf,
@@ -64,6 +67,10 @@ pub struct WorkspaceManager {
     upload_status: Arc<RwLock<UploadStatus>>,
     /// Content sequence counter
     content_seq_counter: Arc<RwLock<u64>>,
+    /// Initialization complete flag (like augment.mjs's fGe Promise)
+    init_complete: Arc<tokio::sync::Notify>,
+    /// Whether initialization has completed
+    init_done: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl WorkspaceManager {
@@ -115,6 +122,8 @@ impl WorkspaceManager {
             cache_file_path,
             upload_status: Arc::new(RwLock::new(UploadStatus::default())),
             content_seq_counter: Arc::new(RwLock::new(1000)),
+            init_complete: Arc::new(tokio::sync::Notify::new()),
+            init_done: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -407,5 +416,55 @@ impl WorkspaceManager {
         }
 
         deleted
+    }
+
+    /// Initialize workspace (load cache + sync files).
+    ///
+    /// This mirrors augment.mjs's `workspace.initialize()` behavior.
+    /// Should be called in background via `tokio::spawn`.
+    /// Other code can await completion via `await_initialized()`.
+    pub async fn initialize(&self) {
+        // Load persistent state first so subsequent syncs can reuse cached blob info.
+        if let Err(e) = self.load_state().await {
+            warn!("Failed to load workspace state: {}", e);
+        }
+
+        // Only perform sync/upload if we have an authenticated runtime client.
+        let client = match get_client() {
+            Some(c) => c,
+            None => {
+                warn!("Skipping background upload: no authenticated client");
+                // Still mark as initialized so awaits don't block forever
+                self.init_done
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.init_complete.notify_waiters();
+                return;
+            }
+        };
+
+        let sync_result = sync_full(self, client).await;
+
+        info!(
+            "✅ Workspace initialization complete: {} files uploaded",
+            sync_result.uploaded_count
+        );
+
+        // Signal initialization complete (like augment.mjs's fGe Promise resolving)
+        self.init_done
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.init_complete.notify_waiters();
+    }
+
+    /// Wait for initialization to complete.
+    ///
+    /// This mirrors augment.mjs's `await fGe` pattern where tool calls
+    /// wait for workspace initialization before proceeding.
+    pub async fn await_initialized(&self) {
+        // Fast path: already initialized
+        if self.init_done.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        // Wait for notification
+        self.init_complete.notified().await;
     }
 }

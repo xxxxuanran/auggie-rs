@@ -76,10 +76,7 @@ impl AuggieMcpServer {
         let start_time = Instant::now();
         let request_id = format!("mcp-request-{}", chrono::Utc::now().timestamp_millis());
         let tool_use_id = format!("mcp-tool-{}", chrono::Utc::now().timestamp_millis());
-        let conversation_id = format!(
-            "mcp-conversation-{}",
-            chrono::Utc::now().timestamp_millis()
-        );
+        let conversation_id = format!("mcp-conversation-{}", chrono::Utc::now().timestamp_millis());
         let tool_input = serde_json::json!({
             "information_request": &args.information_request
         });

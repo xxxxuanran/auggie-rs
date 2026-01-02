@@ -20,7 +20,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing::{debug, error, info, warn};
 
-use crate::api::{ApiClient, ApiCliMode, ApiStatus, GetModelsResponse, ValidationResult};
+use crate::api::{ApiCliMode, ApiClient, ApiStatus, GetModelsResponse, ValidationResult};
 
 use super::model_resolver::{
     parse_model_info_registry, resolve_model_with_fallback, ModelInfoRegistry,
@@ -69,9 +69,7 @@ impl EnsureError {
             ApiStatus::ResourceExhausted => {
                 EnsureError::RateLimited(status.error_message().to_string())
             }
-            ApiStatus::Unavailable => {
-                EnsureError::ServerError(status.error_message().to_string())
-            }
+            ApiStatus::Unavailable => EnsureError::ServerError(status.error_message().to_string()),
             _ => EnsureError::Other(status.error_message().to_string()),
         }
     }
@@ -170,10 +168,7 @@ impl StartupState {
 
     /// Get user email if available
     pub fn user_email(&self) -> Option<&str> {
-        self.model_config
-            .user
-            .as_ref()
-            .map(|u| u.email.as_str())
+        self.model_config.user.as_ref().map(|u| u.email.as_str())
     }
 
     /// Get user tier if available
@@ -363,10 +358,7 @@ impl StartupContext {
     /// - Status 7 (Unauthenticated): Requires re-login
     /// - Status 8 (PermissionDenied): Account not authorized
     /// - Status 12 (UpgradeRequired): Client version too old
-    async fn ensure_feature_flags(
-        &mut self,
-        model_config: &GetModelsResponse,
-    ) -> EnsureResult<()> {
+    async fn ensure_feature_flags(&mut self, model_config: &GetModelsResponse) -> EnsureResult<()> {
         info!("🏁 Checking feature flags...");
         self.feature_flags_status = EnsureStatus::InProgress;
 

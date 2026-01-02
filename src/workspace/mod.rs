@@ -13,10 +13,10 @@ mod cache;
 mod manager;
 mod scanner;
 mod sync;
-mod types;
-mod upload;
 #[cfg(test)]
 mod tests;
+mod types;
+mod upload;
 
 // Re-exports
 pub use cache::{Checkpoint, FileBlob};

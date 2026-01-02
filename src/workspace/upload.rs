@@ -91,7 +91,9 @@ pub async fn upload_batch_with_fallback(
 
     let successfully_uploaded = match &batch_result {
         Ok(response) => {
-            result.blob_names.extend(response.blob_names.iter().cloned());
+            result
+                .blob_names
+                .extend(response.blob_names.iter().cloned());
             response.blob_names.len()
         }
         Err(e) => {

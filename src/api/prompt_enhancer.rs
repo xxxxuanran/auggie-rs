@@ -229,13 +229,13 @@ impl ApiClient {
         let wrapped_message = build_legacy_prompt(&prompt);
 
         // Convert checkpoint to blobs format
-        let blobs = checkpoint.map(ChatStreamBlobs::from).unwrap_or_else(|| {
-            ChatStreamBlobs {
+        let blobs = checkpoint
+            .map(ChatStreamBlobs::from)
+            .unwrap_or_else(|| ChatStreamBlobs {
                 checkpoint_id: None,
                 added_blobs: Vec::new(),
                 deleted_blobs: Vec::new(),
-            }
-        });
+            });
 
         let blob_count = blobs.added_blobs.len();
         debug!(

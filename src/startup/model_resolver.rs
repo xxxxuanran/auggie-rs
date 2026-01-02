@@ -98,10 +98,7 @@ pub enum MatchedBy {
 pub fn parse_model_info_registry(json_str: &str) -> Option<ModelInfoRegistry> {
     match serde_json::from_str::<ModelInfoRegistry>(json_str) {
         Ok(registry) => {
-            debug!(
-                "Parsed model_info_registry with {} models",
-                registry.len()
-            );
+            debug!("Parsed model_info_registry with {} models", registry.len());
             Some(registry)
         }
         Err(e) => {
@@ -179,7 +176,11 @@ pub fn resolve_model_with_fallback(
     };
 
     match resolve_model(input, registry) {
-        ModelResolution::Resolved { id, display_name, matched_by } => {
+        ModelResolution::Resolved {
+            id,
+            display_name,
+            matched_by,
+        } => {
             // Check if model is disabled
             if let Some(info) = registry.get(&id) {
                 if info.disabled {
@@ -188,7 +189,10 @@ pub fn resolve_model_with_fallback(
                     if reason.is_empty() {
                         warn!("Model is disabled: {}. Falling back to default.", name);
                     } else {
-                        warn!("Model is disabled: {} - {}. Falling back to default.", name, reason);
+                        warn!(
+                            "Model is disabled: {} - {}. Falling back to default.",
+                            name, reason
+                        );
                     }
                     return default_model.map(|s| s.to_string());
                 }
@@ -200,8 +204,14 @@ pub fn resolve_model_with_fallback(
             );
             Some(id)
         }
-        ModelResolution::DisplayNameNotSupported { short_name, display_name, .. } => {
-            let suggestion = short_name.as_deref().unwrap_or("the model short name or id");
+        ModelResolution::DisplayNameNotSupported {
+            short_name,
+            display_name,
+            ..
+        } => {
+            let suggestion = short_name
+                .as_deref()
+                .unwrap_or("the model short name or id");
             warn!(
                 "Using a display name for --model is no longer supported. Use \"{}\" instead.",
                 suggestion
@@ -330,33 +340,23 @@ mod tests {
     #[test]
     fn test_resolve_with_fallback_disabled_model() {
         let registry = sample_registry();
-        let result = resolve_model_with_fallback(
-            Some("disabled"),
-            &registry,
-            Some("fallback-model"),
-        );
+        let result =
+            resolve_model_with_fallback(Some("disabled"), &registry, Some("fallback-model"));
         assert_eq!(result, Some("fallback-model".to_string()));
     }
 
     #[test]
     fn test_resolve_with_fallback_success() {
         let registry = sample_registry();
-        let result = resolve_model_with_fallback(
-            Some("opus4.5"),
-            &registry,
-            Some("fallback-model"),
-        );
+        let result =
+            resolve_model_with_fallback(Some("opus4.5"), &registry, Some("fallback-model"));
         assert_eq!(result, Some("claude-opus-4-5".to_string()));
     }
 
     #[test]
     fn test_resolve_with_fallback_no_input() {
         let registry = sample_registry();
-        let result = resolve_model_with_fallback(
-            None,
-            &registry,
-            Some("fallback-model"),
-        );
+        let result = resolve_model_with_fallback(None, &registry, Some("fallback-model"));
         assert_eq!(result, None);
     }
 }
