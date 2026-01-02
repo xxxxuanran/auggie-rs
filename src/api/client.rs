@@ -156,6 +156,9 @@ impl ApiClient {
     }
 
     /// Make an authenticated API request with custom timeout
+    ///
+    /// If the request fails with 401/403, returns an error indicating
+    /// the token may have expired and the user should run `auggie login`.
     pub async fn call_api_with_timeout<T, R>(
         &self,
         endpoint: &str,
@@ -177,12 +180,27 @@ impl ApiClient {
         debug!("Status: {}", status);
 
         if !status.is_success() {
+            let http_status = status.as_u16();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            error!("API request failed with status {}: {}", status, error_text);
-            anyhow::bail!("API request failed with status {}: {}", status, error_text);
+
+            // Create a structured API error
+            let api_error =
+                super::types::ApiError::from_http_response(http_status, error_text.clone(), None);
+
+            // Log with appropriate severity based on error type
+            if api_error.requires_relogin {
+                error!("❌ {}", api_error.message);
+                error!("   {}", api_error.user_hint());
+            } else if api_error.is_fatal() {
+                error!("❌ {}", api_error.message);
+            } else {
+                error!("API request failed: {}", api_error.message);
+            }
+
+            anyhow::bail!(api_error);
         }
 
         let response_text = response

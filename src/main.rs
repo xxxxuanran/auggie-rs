@@ -4,8 +4,10 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 mod api;
 mod mcp;
+mod metadata;
 mod oauth;
 mod session;
+mod startup;
 mod telemetry;
 mod workspace;
 

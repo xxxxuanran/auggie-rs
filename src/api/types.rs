@@ -171,3 +171,413 @@ pub struct ToolUseEvent {
     pub tool_use_diff: Option<String>,
     pub event_time: chrono::DateTime<chrono::Utc>,
 }
+
+// ============================================================================
+// API Status Codes (matches augment.mjs Am enum)
+// ============================================================================
+
+/// API status codes matching augment.mjs internal status codes.
+///
+/// These are translated from HTTP status codes and used for error handling.
+/// See augment.mjs line 231845-231860 for the original definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ApiStatus {
+    /// Success
+    Ok = 0,
+    /// Request was cancelled (client closed connection) - retryable
+    Cancelled = 1,
+    /// Unknown error
+    Unknown = 2,
+    /// Service unavailable - retryable
+    Unavailable = 3,
+    /// Endpoint not found / not implemented
+    Unimplemented = 4,
+    /// Invalid request arguments
+    InvalidArgument = 5,
+    /// Rate limit exceeded
+    ResourceExhausted = 6,
+    /// Authentication failed - FATAL, requires login
+    Unauthenticated = 7,
+    /// Permission denied (closed beta, account disabled) - FATAL
+    PermissionDenied = 8,
+    /// Request timeout
+    DeadlineExceeded = 9,
+    /// Request body too large
+    AugmentTooLarge = 10,
+    /// Client-side timeout
+    AugmentClientTimeout = 11,
+    /// Client version too old - FATAL, requires upgrade
+    AugmentUpgradeRequired = 12,
+}
+
+impl ApiStatus {
+    /// Convert from i32 status code
+    pub fn from_i32(code: i32) -> Self {
+        match code {
+            0 => ApiStatus::Ok,
+            1 => ApiStatus::Cancelled,
+            2 => ApiStatus::Unknown,
+            3 => ApiStatus::Unavailable,
+            4 => ApiStatus::Unimplemented,
+            5 => ApiStatus::InvalidArgument,
+            6 => ApiStatus::ResourceExhausted,
+            7 => ApiStatus::Unauthenticated,
+            8 => ApiStatus::PermissionDenied,
+            9 => ApiStatus::DeadlineExceeded,
+            10 => ApiStatus::AugmentTooLarge,
+            11 => ApiStatus::AugmentClientTimeout,
+            12 => ApiStatus::AugmentUpgradeRequired,
+            _ => ApiStatus::Unknown,
+        }
+    }
+
+    /// Convert from HTTP status code to internal API status
+    /// See augment.mjs fbn function (line 231938-231964)
+    pub fn from_http_status(http_status: u16) -> Self {
+        match http_status {
+            200..=299 => ApiStatus::Ok,
+            400 => ApiStatus::InvalidArgument,
+            401 => ApiStatus::Unauthenticated,
+            403 => ApiStatus::PermissionDenied,
+            404 => ApiStatus::Unimplemented,
+            408 => ApiStatus::AugmentClientTimeout,
+            413 => ApiStatus::AugmentTooLarge,
+            426 => ApiStatus::AugmentUpgradeRequired,
+            429 => ApiStatus::ResourceExhausted,
+            499 => ApiStatus::Cancelled,
+            504 => ApiStatus::DeadlineExceeded,
+            500..=599 => ApiStatus::Unavailable,
+            _ => ApiStatus::Unknown,
+        }
+    }
+
+    /// Check if this error is fatal (requires user action, cannot continue)
+    pub fn is_fatal(&self) -> bool {
+        matches!(
+            self,
+            ApiStatus::Unauthenticated
+                | ApiStatus::PermissionDenied
+                | ApiStatus::AugmentUpgradeRequired
+        )
+    }
+
+    /// Check if this error is retryable
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, ApiStatus::Cancelled | ApiStatus::Unavailable)
+    }
+
+    /// Get the error message for this status
+    pub fn error_message(&self) -> &'static str {
+        match self {
+            ApiStatus::Ok => "Success",
+            ApiStatus::Cancelled => "Request was cancelled",
+            ApiStatus::Unknown => "Unknown error occurred",
+            ApiStatus::Unavailable => "Service temporarily unavailable",
+            ApiStatus::Unimplemented => "Endpoint not found",
+            ApiStatus::InvalidArgument => "Invalid request",
+            ApiStatus::ResourceExhausted => "Rate limit exceeded. Please wait and try again",
+            ApiStatus::Unauthenticated => {
+                "Authentication failed. Please run 'auggie login' to re-authenticate"
+            }
+            ApiStatus::PermissionDenied => {
+                "Auggie CLI is in closed beta. If you're part of an Enterprise organization \
+                 and would like to get access, contact: contact@augmentcode.com. \
+                 For non-enterprise users, sign up for the waitlist at augment.new"
+            }
+            ApiStatus::DeadlineExceeded => "Request timed out",
+            ApiStatus::AugmentTooLarge => "Request body too large",
+            ApiStatus::AugmentClientTimeout => "Client timeout",
+            ApiStatus::AugmentUpgradeRequired => {
+                "Client upgrade required. Please update to the latest version"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ApiStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error_message())
+    }
+}
+
+// ============================================================================
+// API Error Type (for detailed error handling)
+// ============================================================================
+
+/// API error with status code and details.
+///
+/// This is similar to the `la` (APIError) class in augment.mjs.
+/// It captures the HTTP status, internal API status, and error details.
+#[derive(Debug, Clone)]
+pub struct ApiError {
+    /// Internal API status code (0-12)
+    pub status: ApiStatus,
+    /// HTTP status code
+    pub http_status: u16,
+    /// Error message
+    pub message: String,
+    /// Request ID (for debugging)
+    pub request_id: Option<String>,
+    /// Whether this error should trigger a re-login prompt
+    pub requires_relogin: bool,
+}
+
+impl ApiError {
+    /// Create from HTTP status code and response body
+    pub fn from_http_response(http_status: u16, body: String, request_id: Option<String>) -> Self {
+        let status = ApiStatus::from_http_status(http_status);
+        let requires_relogin = matches!(
+            status,
+            ApiStatus::Unauthenticated | ApiStatus::PermissionDenied
+        );
+
+        let message = match status {
+            ApiStatus::Unauthenticated => {
+                format!(
+                    "Authentication failed (HTTP {}). Your token may have expired. \
+                     Please run 'auggie login' to re-authenticate.",
+                    http_status
+                )
+            }
+            ApiStatus::PermissionDenied => {
+                format!(
+                    "Permission denied (HTTP {}). {}",
+                    http_status,
+                    status.error_message()
+                )
+            }
+            ApiStatus::ResourceExhausted => {
+                format!(
+                    "Rate limit exceeded (HTTP {}). Please wait and try again.",
+                    http_status
+                )
+            }
+            ApiStatus::AugmentUpgradeRequired => {
+                format!(
+                    "Client upgrade required (HTTP {}). Please update to the latest version.",
+                    http_status
+                )
+            }
+            _ => {
+                if body.is_empty() {
+                    format!("API error (HTTP {}): {}", http_status, status.error_message())
+                } else {
+                    format!("API error (HTTP {}): {}", http_status, body)
+                }
+            }
+        };
+
+        Self {
+            status,
+            http_status,
+            message,
+            request_id,
+            requires_relogin,
+        }
+    }
+
+    /// Check if this error is fatal (requires user action)
+    pub fn is_fatal(&self) -> bool {
+        self.status.is_fatal()
+    }
+
+    /// Get a hint message for the user
+    pub fn user_hint(&self) -> &'static str {
+        match self.status {
+            ApiStatus::Unauthenticated => {
+                "Your session has expired. Please run 'auggie login' to re-authenticate."
+            }
+            ApiStatus::PermissionDenied => {
+                "Your account does not have access to this feature. \
+                 Contact your administrator or sign up at augment.new"
+            }
+            ApiStatus::AugmentUpgradeRequired => {
+                "Please update auggie to the latest version."
+            }
+            ApiStatus::ResourceExhausted => {
+                "You have exceeded the rate limit. Please wait a moment and try again."
+            }
+            ApiStatus::Unavailable => {
+                "The Augment service is temporarily unavailable. Please try again later."
+            }
+            _ => "An unexpected error occurred. Please try again or contact support.",
+        }
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+// ============================================================================
+// Get Models API Types (for connection validation and feature flags)
+// ============================================================================
+
+/// User info from get-models response
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetModelsUser {
+    pub id: String,
+    pub email: String,
+    pub tenant_id: String,
+    pub tenant_name: String,
+}
+
+/// Single model info from get-models response
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelInfo {
+    pub model: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub capabilities: Option<Vec<String>>,
+}
+
+/// Feature flags from get-models response (v1 format)
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FeatureFlagsV1 {
+    #[serde(default)]
+    pub enable_codebase_retrieval: Option<bool>,
+    #[serde(default)]
+    pub enable_commit_retrieval: Option<bool>,
+    #[serde(default)]
+    pub enable_prompt_enhancer: Option<bool>,
+    #[serde(default)]
+    pub enable_telemetry: Option<bool>,
+    #[serde(default)]
+    pub enable_mcp_mode: Option<bool>,
+    #[serde(default)]
+    pub enable_cli_mode: Option<bool>,
+    /// Catch-all for unknown flags
+    #[serde(flatten)]
+    pub other: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Feature flags from get-models response (v2 format with explicit enabled/disabled)
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FeatureFlagsV2 {
+    #[serde(default)]
+    pub enabled: Vec<String>,
+    #[serde(default)]
+    pub disabled: Vec<String>,
+}
+
+/// Get models response (full fields for feature flags and validation)
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetModelsResponse {
+    /// Default model to use
+    #[serde(default)]
+    pub default_model: Option<String>,
+
+    /// Available models list
+    #[serde(default)]
+    pub models: Vec<ModelInfo>,
+
+    /// Supported programming languages
+    #[serde(default)]
+    pub languages: Vec<String>,
+
+    /// Feature flags (v1 format - key-value pairs)
+    #[serde(default)]
+    pub feature_flags: FeatureFlagsV1,
+
+    /// Feature flags (v2 format - explicit enabled/disabled lists)
+    #[serde(default, rename = "feature_flags_v2")]
+    pub feature_flags_v2: Option<FeatureFlagsV2>,
+
+    /// User tier (e.g., "free", "pro", "enterprise")
+    #[serde(default)]
+    pub user_tier: Option<String>,
+
+    /// User information
+    #[serde(default)]
+    pub user: Option<GetModelsUser>,
+
+    /// Error status code from API (e.g., 8 = account disabled for CLI/MCP mode)
+    #[serde(default)]
+    pub status: Option<i32>,
+}
+
+impl GetModelsResponse {
+    /// Check if a feature flag is enabled (checks both v1 and v2 formats)
+    pub fn is_feature_enabled(&self, flag_name: &str) -> bool {
+        // First check v2 format (more explicit)
+        if let Some(ref v2) = self.feature_flags_v2 {
+            if v2.enabled.contains(&flag_name.to_string()) {
+                return true;
+            }
+            if v2.disabled.contains(&flag_name.to_string()) {
+                return false;
+            }
+        }
+
+        // Then check v1 format
+        match flag_name {
+            "enable_codebase_retrieval" => {
+                self.feature_flags.enable_codebase_retrieval.unwrap_or(true)
+            }
+            "enable_commit_retrieval" => {
+                self.feature_flags.enable_commit_retrieval.unwrap_or(false)
+            }
+            "enable_prompt_enhancer" => {
+                self.feature_flags.enable_prompt_enhancer.unwrap_or(true)
+            }
+            "enable_telemetry" => self.feature_flags.enable_telemetry.unwrap_or(false),
+            "enable_mcp_mode" => self.feature_flags.enable_mcp_mode.unwrap_or(true),
+            "enable_cli_mode" => self.feature_flags.enable_cli_mode.unwrap_or(true),
+            other => {
+                self.feature_flags
+                    .other
+                    .get(other)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            }
+        }
+    }
+
+    /// Check if MCP mode is enabled for this account
+    pub fn is_mcp_enabled(&self) -> bool {
+        if self.status == Some(8) {
+            return false;
+        }
+        self.is_feature_enabled("enable_mcp_mode")
+    }
+
+    /// Check if CLI mode is enabled for this account
+    pub fn is_cli_enabled(&self) -> bool {
+        if self.status == Some(8) {
+            return false;
+        }
+        self.is_feature_enabled("enable_cli_mode")
+    }
+
+    /// Get the default model name
+    pub fn get_default_model(&self) -> Option<&str> {
+        self.default_model.as_deref()
+    }
+}
+
+// ============================================================================
+// Validation Result (for connection validation)
+// ============================================================================
+
+/// Result of a connection validation check
+#[derive(Debug, Clone)]
+pub enum ValidationResult {
+    /// Connection is valid
+    Ok,
+    /// Invalid credentials (401/403)
+    InvalidCredentials(String),
+    /// Connection error (network issues)
+    ConnectionError(String),
+    /// Server error (5xx)
+    ServerError(String),
+    /// Invalid URL configuration
+    InvalidUrl(String),
+}

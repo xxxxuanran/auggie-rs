@@ -6,6 +6,7 @@
 mod agents;
 mod batch_upload;
 mod client;
+mod get_models;
 mod http;
 mod prompt_enhancer;
 mod record_request_events;
@@ -20,6 +21,7 @@ pub use self::CliMode as ApiCliMode;
 
 #[allow(unused_imports)]
 pub use types::{
-    BatchUploadBlob, BatchUploadResponse, ChatHistoryExchange, CodebaseRetrievalResponse,
-    PromptEnhancerResult, ToolUseEvent,
+    ApiError, ApiStatus, BatchUploadBlob, BatchUploadResponse, ChatHistoryExchange,
+    CodebaseRetrievalResponse, FeatureFlagsV1, FeatureFlagsV2, GetModelsResponse, GetModelsUser,
+    ModelInfo, PromptEnhancerResult, ToolUseEvent, ValidationResult,
 };
